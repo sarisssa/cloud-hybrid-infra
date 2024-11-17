@@ -126,6 +126,22 @@ safe_apt_get update
 safe_apt_get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 check_command "Docker installation"
 
+# Install and run Prometheus
+log "Pulling Prometheus Docker image..."
+docker pull prom/prometheus
+check_command "Prometheus Docker image pull"
+
+# Install Node Exporter to monitor system metrics
+log "Installing Node Exporter..."
+wget https://github.com/prometheus/node_exporter/releases/latest/download/node_exporter-1.8.2.linux-amd64.tar.gz
+tar xvfz node_exporter-1.8.2.linux-amd64.tar.gz
+sudo mv node_exporter-1.8.2.linux-amd64/node_exporter /usr/local/bin/
+rm -rf node_exporter-1.8.2
+
+# Start Node Exporter as a background service
+nohup /usr/local/bin/node_exporter &
+check_command "Node Exporter running"
+
 # Purge all existing A Records and create a new A Record in Porkbun
 log "Updating DNS records..."
 
@@ -216,9 +232,22 @@ server {
         proxy_buffering off;
         proxy_set_header X-Accel-Buffering no;
     }
+
+    location /prometheus/ {
+        proxy_pass http://localhost:9090;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_cache_bypass \$http_upgrade;
+
+    }
 }
 EOF'
 check_command "Nginx configuration creation"
+
+docker run -d --name prometheus -p 9090:9090 -v /tmp/prometheus.yml:/etc/prometheus/prometheus.yml prom/prometheus --config.file=/etc/prometheus/prometheus.yml --web.external-url=/prometheus
+
 
 # Final Nginx Checks
 log "Enabling Nginx site..."
@@ -238,103 +267,3 @@ log "Infrastructure setup completed successfully🎉"
 docker pull sarisssa/demetrian:main
 docker run -d --name demetrian-fe -p 3000:3000 sarisssa/demetrian:main
 
-# export PATH=$PATH:/usr/bin
-
-# # Install Nginx
-# sudo apt update &&
-
-# # Install snap for Certbot
-# sudo apt-get install -y snapd &&
-# sudo snap install core && sudo snap refresh core &&
-# sudo snap install --classic certbot &&
-# sudo ln -s /snap/bin/certbot /usr/bin/certbot &&
-
-# # Install Docker
-# sudo apt-get update &&
-# sudo apt-get install -y ca-certificates curl &&
-# sudo install -m 0755 -d /etc/apt/keyrings &&
-# sudo curl -sSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc &&
-# sudo chmod a+r /etc/apt/keyrings/docker.asc &&
-
-# # Add Docker repository to Apt sources
-# echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-# $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-# sudo tee /etc/apt/sources.list.d/docker.list > /dev/null &&
-
-# # Update package lists and install Docker
-# sudo apt-get update &&
-# sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y
-
-# ipv4_address=$1
-
-# curl --location 'https://api.porkbun.com/api/json/v3/dns/create/wotr.dev' \
-# --data '{
-# 	"secretapikey": "sk1_7557abf0440e04b55152793e18d509e65e00a5efbdbef8d51b40a28c178d01f7",
-# 	"apikey": "pk1_1ac068949d4a46f8148d6503425c5e987abff03b40fa86034025bb3bff0cb2d3",
-# 	"type": "A",
-# 	"content": "'$ipv4_address'",
-# 	"ttl": "200"
-# }'
-
-
-# #Make SSL Cert Wildcard
-# sudo certbot certonly --standalone -d wotr.dev --non-interactive --agree-tos -m sasmikechan@gmail.com
-
-# sudo apt install nginx -y &&
-
-# # Remove old Nginx config (if it exists)
-# sudo rm -f /etc/nginx/sites-available/wotr.dev
-# sudo rm -f /etc/nginx/sites-enabled/wotr.dev
-
-# # Create a directory for the site and apply 755 permission
-# sudo mkdir -p /var/www/wotr.dev/html
-# sudo chmod -R 755 /var/www/wotr.dev
-
-# # Log out h1 string and write to specified file
-# echo '<h1>Hello from wotr.dev</h1>' | sudo tee /var/www/wotr.dev/html/index.html
-
-# # Start bash shell and execute command in the wotr.dev file until EOF is encountered
-# sudo bash -c 'cat > /etc/nginx/sites-available/wotr.dev <<EOF
-# server {
-#     listen 80;
-#     server_name wotr.dev www.wotr.dev; 
-#     # Redirect all HTTP requests to HTTPS
-#     return 301 https://\$host\$request_uri;
-# }
-
-# server {
-#     listen 443 ssl;
-#     server_name wotr.dev www.wotr.dev;
-
-#     ssl_certificate /etc/letsencrypt/live/wotr.dev/fullchain.pem;
-#     ssl_certificate_key /etc/letsencrypt/live/wotr.dev/privkey.pem;
-
-
-#     root /var/www/wotr.dev/html;
-#     index index.html;
-
-#     location / {
-#         proxy_pass http://localhost:3000;
-#         proxy_http_version 1.1;
-#         proxy_set_header Upgrade \$http_upgrade;
-#         proxy_set_header Connection 'upgrade';
-#         proxy_set_header Host \$host;
-#         proxy_cache_bypass \$http_upgrade;
-
-#         # Disable buffering for streaming support
-#         proxy_buffering off;
-#         proxy_set_header X-Accel-Buffering no;
-#     }
-# }
-# EOF'
-
-# # Enable the NGINX site
-# sudo ln -s /etc/nginx/sites-available/wotr.dev /etc/nginx/sites-enabled/
-
-# # Test NGINX configuration
-# sudo nginx -t
-
-# # Restart NGINX to apply the changes
-# sudo systemctl restart nginx
-
-# # terraform destroy -auto-approve && terraform apply -auto-approve

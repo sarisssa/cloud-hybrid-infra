@@ -25,6 +25,11 @@ resource "digitalocean_droplet" "sarisssa-infra-nyc-droplet" {
     source      = "remote-exec.sh"
     destination = "/tmp/remote-exec.sh"
   }
+
+  provisioner "file" {
+    source = "digitalocean/prometheus.yml"
+    destination = "/tmp/prometheus.yml"
+  }
   
   provisioner "remote-exec" {
     inline = [
@@ -33,3 +38,4 @@ resource "digitalocean_droplet" "sarisssa-infra-nyc-droplet" {
     ]
   }
 }
+
