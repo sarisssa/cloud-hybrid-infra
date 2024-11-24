@@ -1,0 +1,344 @@
+---
+- hosts: all
+  become: true
+  vars:
+    created_username: sammy
+    ipv4_address: "{{ ipv4_address }}"
+    domain: "{{ domain }}"
+    porkbun_secret: "{{ porkbun_secret }}"
+    porkbun_api_key: "{{ porkbun_api_key }}"
+    email: "{{ email }}"
+    prometheus_image: "prom/prometheus"
+    demetrian_image: "sarisssa/demetrian:main"
+  tasks:
+    - name: Wait for apt lock to be released or terminate hanging process
+      block:
+        - name: Check for apt lock holder
+          shell: |
+            fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock || true
+          register: lock_holder
+          changed_when: false
+
+        - name: Kill apt lock holder if exists
+          shell: |
+            fuser -k /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock || true
+          when: lock_holder.stdout != ""
+          changed_when: false
+
+        - name: Remove stale apt lock files
+          file:
+            path: "{{ item }}"
+            state: absent
+          with_items:
+            - /var/lib/dpkg/lock-frontend
+            - /var/lib/dpkg/lock
+
+    - name: Install aptitude
+      apt:
+        name: aptitude
+        state: latest
+        update_cache: true
+      retries: 5
+      delay: 10
+
+    - name: Setup passwordless sudo
+      lineinfile:
+        path: /etc/sudoers
+        state: present
+        regexp: "^%sudo"
+        line: "%sudo ALL=(ALL) NOPASSWD: ALL"
+        validate: "/usr/sbin/visudo -cf %s"
+
+    - name: Create a new regular user with sudo privileges
+      user:
+        name: "{{ created_username }}"
+        state: present
+        groups: sudo
+        append: true
+        create_home: true
+
+    - name: Set authorized key for remote user
+      ansible.posix.authorized_key:
+        user: "{{ created_username }}"
+        state: present
+        key: >-
+          {{
+            lookup('file', lookup('env', 'HOME') + '/.ssh/id_rsa.pub')
+            if ansible_facts['os_family'] in ['Linux']
+            else lookup('file', '~/.ssh/id_ed25519.pub')
+          }}
+
+    - name: Disable password authentication for root
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        state: present
+        regexp: "^#?PermitRootLogin"
+        line: "PermitRootLogin prohibit-password"
+
+    - name: Install required system packages
+      apt:
+        pkg:
+          - curl
+          - vim
+          - git
+          - ufw
+        state: latest
+        update_cache: true
+      retries: 5
+      delay: 10
+
+    - name: UFW - Allow SSH connections
+      community.general.ufw:
+        rule: allow
+        name: OpenSSH
+
+    - name: UFW - Enable and deny by default
+      community.general.ufw:
+        state: enabled
+        default: deny
+
+    - name: Update PATH environment
+      lineinfile:
+        path: /etc/environment
+        regexp: "^PATH="
+        line: 'PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"'
+
+    - name: Update system packages
+      block:
+        - name: Wait for apt lock to be released
+          shell: |
+            while sudo lsof /var/lib/dpkg/lock-frontend > /dev/null 2>&1; do
+              sleep 10
+            done
+          changed_when: false
+
+        - name: Update apt cache
+          apt:
+            update_cache: yes
+
+    - name: Install Nginx
+      apt:
+        name: nginx
+        state: present
+
+    - name: Stop Nginx for Certbot
+      service:
+        name: nginx
+        state: stopped
+
+    - name: Install Certbot and dependencies
+      block:
+        - name: Install Snapd
+          apt:
+            name: snapd
+            state: present
+
+        - name: Install Core Snap
+          shell: |
+            snap install core && snap refresh core
+          args:
+            warn: false
+
+        - name: Install Certbot
+          shell: |
+            snap install --classic certbot && ln -sf /snap/bin/certbot /usr/bin/certbot
+          args:
+            warn: false
+
+    - name: Install Docker
+      block:
+        - name: Install prerequisites
+          apt:
+            name:
+              - ca-certificates
+              - curl
+            state: present
+
+        - name: Add Docker GPG key and repository
+          shell: |
+            install -m 0755 -d /etc/apt/keyrings
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+            chmod a+r /etc/apt/keyrings/docker.asc
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+            $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list
+
+        - name: Install Docker packages
+          apt:
+            name:
+              - docker-ce
+              - docker-ce-cli
+              - containerd.io
+              - docker-buildx-plugin
+              - docker-compose-plugin
+            state: present
+
+    - name: Pull Prometheus Docker image
+      docker_image:
+        name: "{{ prometheus_image }}"
+        state: present
+
+    - name: Install Node Exporter
+      block:
+        - name: Download Node Exporter
+          get_url:
+            url: https://github.com/prometheus/node_exporter/releases/latest/download/node_exporter-1.8.2.linux-amd64.tar.gz
+            dest: /tmp/node_exporter.tar.gz
+
+        - name: Extract Node Exporter
+          unarchive:
+            src: /tmp/node_exporter.tar.gz
+            dest: /tmp/
+            remote_src: yes
+
+        - name: Move Node Exporter to /usr/local/bin
+          command:
+            cmd: mv /tmp/node_exporter-1.8.2.linux-amd64/node_exporter /usr/local/bin/
+
+        - name: Clean up Node Exporter files
+          file:
+            path: /tmp/node_exporter-1.8.2.linux-amd64
+            state: absent
+
+        - name: Start Node Exporter
+          shell: nohup /usr/local/bin/node_exporter &
+
+    - name: Update DNS records via Porkbun API
+      block:
+        - name: Delete old A records
+          uri:
+            url: "https://api.porkbun.com/api/json/v3/dns/deleteByNameType/{{ domain }}/A"
+            method: POST
+            body_format: json
+            body:
+              secretapikey: "{{ porkbun_secret }}"
+              apikey: "{{ porkbun_api_key }}"
+            status_code: 200
+
+        - name: Create new A record
+          uri:
+            url: "https://api.porkbun.com/api/json/v3/dns/create/{{ domain }}"
+            method: POST
+            body_format: json
+            body:
+              secretapikey: "{{ porkbun_secret }}"
+              apikey: "{{ porkbun_api_key }}"
+              type: "A"
+              content: "{{ ipv4_address }}"
+              ttl: "200"
+            status_code: 200
+
+    - name: Generate SSL certificate
+      shell: |
+        certbot certonly --standalone -d {{ domain }} --non-interactive --agree-tos -m {{ email }}
+      args:
+        warn: false
+
+    - name: Create Nginx site directory
+      file:
+        path: "/var/www/{{ domain }}/html"
+        state: directory
+        mode: "0755"
+        recurse: true
+
+    - name: Create default index.html
+      copy:
+        content: "<h1>Hello from {{ domain }}</h1>"
+        dest: "/var/www/{{ domain }}/html/index.html"
+
+    - name: Configure Nginx
+      template:
+        src: nginx_template.j2
+        dest: "/etc/nginx/sites-available/{{ domain }}"
+
+    - name: Enable Nginx site
+      file:
+        src: "/etc/nginx/sites-available/{{ domain }}"
+        dest: "/etc/nginx/sites-enabled/{{ domain }}"
+        state: link
+
+    - name: Test Nginx configuration
+      command:
+        cmd: nginx -t
+
+    - name: Start Nginx
+      service:
+        name: nginx
+        state: started
+
+    - name: Pull and run Demetrian Docker container
+      docker_container:
+        name: demetrian-fe
+        image: "{{ demetrian_image }}"
+        ports:
+          - "3000:3000"
+        state: started
+# ---
+# - hosts: all
+#   become: true
+#   vars:
+#     created_username: sammy
+#   tasks:
+#     - name: Install aptitude
+#       apt:
+#         name: aptitude
+#         state: latest
+#         update_cache: true
+#     - name: Setup passwordless sudo
+#       lineinfile:
+#         path: /etc/sudoers
+#         state: present
+#         regexp: "^%sudo"
+#         line: "%sudo ALL=(ALL) NOPASSWD: ALL"
+#         validate: "/usr/sbin/visudo -cf %s"
+#     - name: Create a new regular user with sudo privileges
+#       user:
+#         name: "{{ created_username }}"
+#         state: present
+#         groups: sudo
+#         append: true
+#         create_home: true
+#     - name: Set authorized key for remote user
+#       ansible.posix.authorized_key:
+#         user: "{{ created_username }}"
+#         state: present
+#         key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/id_rsa.pub') }}"
+#     - name: Disable password authentication for root
+#       lineinfile:
+#         path: /etc/ssh/sshd_config
+#         state: present
+#         regexp: "^#?PermitRootLogin"
+#         line: "PermitRootLogin prohibit-password"
+#     - name: Update apt and install required system packages
+#       apt:
+#         pkg:
+#           - curl
+#           - vim
+#           - git
+#           - ufw
+#         state: latest
+#         update_cache: true
+#     - name: UFW - Allow SSH connections
+#       community.general.ufw:
+#         rule: allow
+#         name: OpenSSH
+
+#     - name: UFW - Enable and deny by default
+#       community.general.ufw:
+#         state: enabled
+#         default: deny
+
+#     - name: Log domain variable
+#       debug:
+#         msg: "Domain: {{ domain }}"
+
+#     - name: Log Porkbun secret
+#       debug:
+#         msg: "Porkbun Secret: {{ porkbun_secret }}"
+
+#     - name: Log Porkbun API key
+#       debug:
+#         msg: "Porkbun API Key: {{ porkbun_api_key }}"
+
+#     - name: Log email
+#       debug:
+#         msg: "Email: {{ email }}"

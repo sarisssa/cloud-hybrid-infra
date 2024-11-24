@@ -6,6 +6,6 @@ module "digitalocean" {
   porkbun_secret = var.porkbun_secret
   porkbun_api_key = var.porkbun_api_key 
   domain = var.domain
-} 
+}
 
 

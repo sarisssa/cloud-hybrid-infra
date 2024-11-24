@@ -76,8 +76,6 @@ EMAIL="$5"
 
 log "Starting infra setup for $DOMAIN"
 
-echo $IPV4_ADDRESS HELLO WORLDDDDDDD
-
 # Update PATH
 export PATH=$PATH:/usr/bin
 log "Updated PATH environment"
@@ -126,12 +124,12 @@ safe_apt_get update
 safe_apt_get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 check_command "Docker installation"
 
-# Install and run Prometheus
+# Pull Prometheus image
 log "Pulling Prometheus Docker image..."
 docker pull prom/prometheus
 check_command "Prometheus Docker image pull"
 
-# Install Node Exporter to monitor system metrics
+# Install Node Exporter 
 log "Installing Node Exporter..."
 wget https://github.com/prometheus/node_exporter/releases/latest/download/node_exporter-1.8.2.linux-amd64.tar.gz
 tar xvfz node_exporter-1.8.2.linux-amd64.tar.gz

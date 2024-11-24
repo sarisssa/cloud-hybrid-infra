@@ -1,0 +1,25 @@
+server {
+    listen 80;
+    server_name {{ domain }} www.{{ domain }};
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name {{ domain }} www.{{ domain }};
+
+    ssl_certificate /etc/letsencrypt/live/{{ domain }}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{ domain }}/privkey.pem;
+
+    root /var/www/{{ domain }}/html;
+    index index.html;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_set_header Host $host;
+    }
+
+    location /prometheus/ {
+        proxy_pass http://localhost:9090;
+    }
+}
