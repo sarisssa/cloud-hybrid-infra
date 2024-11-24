@@ -34,8 +34,8 @@ jobs:
         run: terraform init
 
       # 3. Terraform destroy
-      - name: Terraform Destroy
-        run: terraform destroy
+      # - name: Terraform Destroy
+      #   run: terraform destroy
 
       # 4. Apply Terraform (non-interactive)
       - name: Terraform Apply
