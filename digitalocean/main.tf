@@ -2,8 +2,6 @@ data "digitalocean_ssh_key" "terraform" {
   name = "terraform"
 }
 
-// <company-name>-<project-name>-<environment>-<location>-<resource>
-
 resource "digitalocean_droplet" "sarisssa-infra-nyc-droplet" {
   image = "ubuntu-20-04-x64"
   name = "sarisssa-infra-nyc-droplet"
@@ -17,7 +15,7 @@ resource "digitalocean_droplet" "sarisssa-infra-nyc-droplet" {
     host = self.ipv4_address
     user = "root"
     type = "ssh"
-    private_key = file(var.pvt_key)
+    private_key = var.pvt_key
     timeout = "2m"
   }
 
