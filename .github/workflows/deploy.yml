@@ -1,0 +1,70 @@
+name: Deploy Droplet with Terraform and Ansible
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      TF_IN_AUTOMATION: true
+
+    steps:
+      # 1. Checkout Repository
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up SSH private key file
+        run: |
+          echo "${{ secrets.PVT_KEY }}" > /tmp/private_key.pem
+          chmod 600 /tmp/private_key.pem
+
+      # 2. Set Up Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: latest
+
+      # 5. Set Up Ansible
+      - name: Install Ansible
+        run: |
+          sudo apt update
+          sudo apt install -y ansible
+
+      # 3. Initialize Terraform
+      - name: Terraform Init
+        run: terraform init
+
+      # 3. Terraform destroy
+      # - name: Terraform Destroy
+      #   run: terraform destroy
+
+      # 4. Apply Terraform (non-interactive)
+      - name: Terraform Apply
+        id: terraform
+        run: terraform apply -auto-approve
+        env:
+          TF_VAR_do_token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          TF_VAR_pvt_key: /tmp/private_key.pem
+          TF_VAR_domain: ${{ secrets.DOMAIN }}
+          TF_VAR_porkbun_secret: ${{ secrets.PORKBUN_SECRET }}
+          TF_VAR_porkbun_api_key: ${{ secrets.PORKBUN_API_KEY}}
+          TF_VAR_email: ${{ secrets.EMAIL }}
+
+    # 5. Run remote-exec.sh as the Last Step in Playbook
+    # - name: Execute Remote Script
+    #   run: |
+    #     scp -o StrictHostKeyChecking=no remote-exec.sh root@${{ env.DROPLET_IP }}:/tmp/
+    #     ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} "bash /tmp/remote-exec.sh"
+    #     ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} "rm /tmp/remote-exec.sh"
+# Steps:
+# 1. Run terraform
+# 2. Get Droplet IP from terraform output
+# 3. Add Droplet IP to known ansible hosts
+# 4. Run ansible playbook and pass IP + other stuff as extra vars within a Github Action
+# 5. Run remote-exec.sh as last step in playbook -- At this point, the app should be fully functional again, but make minimal use of ansible
+# 6. Refactor remote-exec.sh to be ansible tasks one by one

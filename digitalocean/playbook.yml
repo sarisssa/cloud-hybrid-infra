@@ -1,0 +1,184 @@
+---
+- hosts: all
+  become: true
+  vars:
+    created_username: sammy
+    ipv4_address: "{{ ipv4_address }}"
+    domain: "{{ domain }}"
+    porkbun_secret: "{{ porkbun_secret }}"
+    porkbun_api_key: "{{ porkbun_api_key }}"
+    email: "{{ email }}"
+    prometheus_image: "prom/prometheus"
+    demetrian_image: "sarisssa/demetrian:main"
+  tasks:
+    - include_tasks: tasks/remove-apt-locks.yml
+
+    - name: Install Docker
+      block:
+        - name: Add Docker GPG apt Key
+          apt_key:
+            url: https://download.docker.com/linux/ubuntu/gpg
+            state: present
+
+        - name: Add Docker Repository
+          apt_repository:
+            repo: deb https://download.docker.com/linux/ubuntu focal stable
+            state: present
+
+    - name: Install required packages
+      apt:
+        name:
+          - certbot
+          - aptitude
+          - nginx
+          - docker-ce
+        pkg:
+          - curl
+          - vim
+          - git
+          - ufw
+        state: present
+        update_cache: yes
+      retries: 5
+      delay: 10
+
+    - name: Stop Nginx for Certbot
+      service:
+        name: nginx
+        state: stopped
+
+    - name: Setup passwordless sudo
+      lineinfile:
+        path: /etc/sudoers
+        state: present
+        regexp: "^%sudo"
+        line: "%sudo ALL=(ALL) NOPASSWD: ALL"
+        validate: "/usr/sbin/visudo -cf %s"
+
+    - name: Disable password authentication for root
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        state: present
+        regexp: "^#?PermitRootLogin"
+        line: "PermitRootLogin prohibit-password"
+
+    # - name: Allow SSH connections
+    #   ufw:
+    #     rule: allow
+    #     name: OpenSSH
+
+    - name: Allow HTTP traffic (port 80)
+      ufw:
+        rule: allow
+        port: 80
+        proto: tcp
+
+    - name: Allow HTTPS traffic (port 443)
+      ufw:
+        rule: allow
+        port: 443
+        proto: tcp
+
+    - name: Enable UFW
+      ufw:
+        state: enabled
+
+    # - name: Update PATH environment
+    #   lineinfile:
+    #     path: /etc/environment
+    #     regexp: "^PATH="
+    #     line: 'PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"'
+
+    - name: Pull Prometheus Docker image
+      docker_image:
+        name: "{{ prometheus_image }}"
+        source: pull
+        state: present
+
+    - name: Install Node Exporter
+      block:
+        - name: Download Node Exporter
+          get_url:
+            url: https://github.com/prometheus/node_exporter/releases/latest/download/node_exporter-1.8.2.linux-amd64.tar.gz
+            dest: /tmp/node_exporter.tar.gz
+
+        - name: Extract Node Exporter
+          unarchive:
+            src: /tmp/node_exporter.tar.gz
+            dest: /tmp/
+            remote_src: yes
+
+        - name: Move Node Exporter to /usr/local/bin
+          command:
+            cmd: mv /tmp/node_exporter-1.8.2.linux-amd64/node_exporter /usr/local/bin/
+
+        - name: Clean up Node Exporter files
+          file:
+            path: /tmp/node_exporter-1.8.2.linux-amd64
+            state: absent
+
+        - name: Start Node Exporter
+          shell: nohup /usr/local/bin/node_exporter &
+
+    - name: Update DNS records via Porkbun API
+      block:
+        - name: Delete old A records
+          uri:
+            url: "https://api.porkbun.com/api/json/v3/dns/deleteByNameType/{{ domain }}/A"
+            method: POST
+            body_format: json
+            body:
+              secretapikey: "{{ porkbun_secret }}"
+              apikey: "{{ porkbun_api_key }}"
+            status_code:
+              - 200
+              - 400
+
+        - name: Create new A record
+          uri:
+            url: "https://api.porkbun.com/api/json/v3/dns/create/{{ domain }}"
+            method: POST
+            body_format: json
+            body:
+              secretapikey: "{{ porkbun_secret }}"
+              apikey: "{{ porkbun_api_key }}"
+              type: "A"
+              content: "{{ ipv4_address }}"
+              ttl: "200"
+            status_code: 200
+
+    - name: Generate SSL certificate on Droplet
+      ansible.builtin.shell: |
+        certbot certonly --standalone -d {{ domain }} --non-interactive --agree-tos -m {{ email }}
+      delegate_to: "{{ ipv4_address }}"
+
+    - name: Create Nginx site directory
+      file:
+        path: "/var/www/{{ domain }}/html"
+        state: directory
+        mode: "0755"
+        recurse: true
+
+    - name: Configure Nginx
+      template:
+        src: nginx_template.j2
+        dest: "/etc/nginx/sites-available/{{ domain }}"
+
+    - name: Enable Nginx site
+      file:
+        src: "/etc/nginx/sites-available/{{ domain }}"
+        dest: "/etc/nginx/sites-enabled/{{ domain }}"
+        state: link
+
+    - name: Start Nginx
+      service:
+        name: nginx
+        state: started
+
+    - name: Pull and run Demetrian Docker container
+      docker_container:
+        name: demetrian-fe
+        image: "{{ demetrian_image }}"
+        ports:
+          - "3000:3000"
+        state: started
