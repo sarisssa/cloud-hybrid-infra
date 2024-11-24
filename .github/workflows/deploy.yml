@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -40,7 +41,7 @@ jobs:
       # 4. Apply Terraform (non-interactive)
       - name: Terraform Apply
         id: terraform
-        run: terraform apply -auto-approve
+        run: TF_LOG=DEBUG terraform apply -auto-approve
         env:
           TF_VAR_token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
