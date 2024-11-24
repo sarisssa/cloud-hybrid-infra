@@ -49,19 +49,19 @@
         line: "%sudo ALL=(ALL) NOPASSWD: ALL"
         validate: "/usr/sbin/visudo -cf %s"
 
-    - name: Create a new regular user with sudo privileges
-      user:
-        name: "{{ created_username }}"
-        state: present
-        groups: sudo
-        append: true
-        create_home: true
+    # - name: Create a new regular user with sudo privileges
+    #   user:
+    #     name: "{{ created_username }}"
+    #     state: present
+    #     groups: sudo
+    #     append: true
+    #     create_home: true
 
-    - name: Set authorized key for remote user
-      ansible.posix.authorized_key:
-        user: "{{ created_username }}"
-        state: present
-        key: lookup('file', '~/.ssh/id_ed25519.pub')
+    # - name: Set authorized key for remote user
+    #   ansible.posix.authorized_key:
+    #     user: "{{ created_username }}"
+    #     state: present
+    #     key: lookup('file', '~/.ssh/id_ed25519.pub')
 
     - name: Disable password authentication for root
       lineinfile:
