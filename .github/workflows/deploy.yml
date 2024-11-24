@@ -20,8 +20,8 @@ jobs:
 
       - name: Set up SSH private key file
         run: |
-          echo "${{ secrets.PVT_KEY }}" > private_key.pem
-          chmod 600 private_key.pem
+          echo "${{ secrets.PVT_KEY }}" > /tmp/private_key.pem
+          chmod 600 /tmp/private_key.pem
 
       # 2. Set Up Terraform
       - name: Setup Terraform
@@ -49,7 +49,7 @@ jobs:
         run: TF_LOG=DEBUG terraform apply -auto-approve
         env:
           TF_VAR_do_token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-          TF_VAR_pvt_key: private_key.pem
+          TF_VAR_pvt_key: /tmp/private_key.pem
           TF_VAR_domain: ${{ secrets.DOMAIN }}
           TF_VAR_porkbun_secret: ${{ secrets.PORKBUN_SECRET }}
           TF_VAR_porkbun_api_key: ${{ secrets.PORKRBUN_API_KEY}}
