@@ -31,6 +31,7 @@ resource "digitalocean_droplet" "sarisssa-infra-nyc-droplet" {
 
   provisioner "local-exec" {
     command = <<EOT
+      mkdir -p ~/.ssh
       ssh-keyscan -H ${self.ipv4_address} >> ~/.ssh/known_hosts
       ansible-playbook -i ${self.ipv4_address}, --private-key=${var.pvt_key} -u root digitalocean/playbook.yml \
         -e "domain=${var.domain} porkbun_secret=${var.porkbun_secret} porkbun_api_key=${var.porkbun_api_key} email=${var.email}"
