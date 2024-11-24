@@ -52,7 +52,7 @@ jobs:
           TF_VAR_pvt_key: /tmp/private_key.pem
           TF_VAR_domain: ${{ secrets.DOMAIN }}
           TF_VAR_porkbun_secret: ${{ secrets.PORKBUN_SECRET }}
-          TF_VAR_porkbun_api_key: ${{ secrets.PORKRBUN_API_KEY}}
+          TF_VAR_porkbun_api_key: ${{ secrets.PORKBUN_API_KEY}}
           TF_VAR_email: ${{ secrets.EMAIL }}
 
     # 5. Run remote-exec.sh as the Last Step in Playbook
