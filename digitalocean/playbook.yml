@@ -12,26 +12,8 @@
     demetrian_image: "sarisssa/demetrian:main"
   tasks:
     - name: Wait for apt lock to be released or terminate hanging process
-      block:
-        - name: Check for apt lock holder
-          shell: |
-            fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock || true
-          register: lock_holder
-          changed_when: false
 
-        - name: Kill apt lock holder if exists
-          shell: |
-            fuser -k /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock || true
-          when: lock_holder.stdout != ""
-          changed_when: false
-
-        - name: Remove stale apt lock files
-          file:
-            path: "{{ item }}"
-            state: absent
-          with_items:
-            - /var/lib/dpkg/lock-frontend
-            - /var/lib/dpkg/lock
+    - include_tasks: tasks/remove-apt-locks.yml
 
     - name: Install aptitude
       apt:
@@ -136,6 +118,8 @@
           shell: |
             snap install --classic certbot && ln -sf /snap/bin/certbot /usr/bin/certbot
 
+    - include_tasks: tasks/remove-apt-locks.yml
+
     - name: Install Docker
       block:
         - name: Add Docker GPG apt Key
@@ -147,10 +131,6 @@
           apt_repository:
             repo: deb https://download.docker.com/linux/ubuntu focal stable
             state: present
-            retries: 3
-            delay: 10
-            register: result
-            until: result is succeeded
 
         - name: Update apt and install docker-ce
           apt:
