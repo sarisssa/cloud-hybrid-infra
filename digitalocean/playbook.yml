@@ -13,6 +13,17 @@
   tasks:
     - include_tasks: tasks/remove-apt-locks.yml
 
+    - name: Install Certbot
+      apt:
+        name: certbot
+        state: present
+        update_cache: yes
+
+    - name: Generate SSL certificate on Droplet
+      ansible.builtin.shell: |
+        certbot certonly --standalone -d {{ domain }} --non-interactive --agree-tos -m {{ email }}
+      delegate_to: "{{ ipv4_address }}"
+
     - name: Install aptitude
       apt:
         name: aptitude
@@ -101,22 +112,22 @@
         name: nginx
         state: stopped
 
-    - name: Install Certbot and dependencies
-      block:
-        - name: Install Snapd
-          apt:
-            name: snapd
-            state: present
+    # - name: Install Certbot and dependencies
+    #   block:
+    #     - name: Install Snapd
+    #       apt:
+    #         name: snapd
+    #         state: present
 
-        - name: Install Core Snap
-          shell: |
-            snap install core && snap refresh core
+    #     - name: Install Core Snap
+    #       shell: |
+    #         snap install core && snap refresh core
 
-        - name: Install Certbot
-          shell: |
-            snap install --classic certbot && ln -sf /snap/bin/certbot /usr/bin/certbot
+    #     - name: Install Certbot
+    #       shell: |
+    #         snap install --classic certbot && ln -sf /snap/bin/certbot /usr/bin/certbot
 
-    - include_tasks: tasks/remove-apt-locks.yml
+    # - include_tasks: tasks/remove-apt-locks.yml
 
     - name: Install Docker
       block:
