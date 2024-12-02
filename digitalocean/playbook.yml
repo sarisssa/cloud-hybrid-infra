@@ -161,6 +161,7 @@
     - name: Pull Prometheus Docker image
       docker_image:
         name: "{{ prometheus_image }}"
+        source: pull
         state: present
 
     - name: Install Node Exporter
