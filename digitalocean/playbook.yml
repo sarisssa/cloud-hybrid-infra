@@ -131,14 +131,10 @@
         - name: Install Core Snap
           shell: |
             snap install core && snap refresh core
-          args:
-            warn: false
 
         - name: Install Certbot
           shell: |
             snap install --classic certbot && ln -sf /snap/bin/certbot /usr/bin/certbot
-          args:
-            warn: false
 
     - name: Install Docker
       block:
@@ -225,8 +221,6 @@
     - name: Generate SSL certificate
       shell: |
         certbot certonly --standalone -d {{ domain }} --non-interactive --agree-tos -m {{ email }}
-      args:
-        warn: false
 
     - name: Create Nginx site directory
       file:
