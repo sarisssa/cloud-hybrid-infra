@@ -167,13 +167,6 @@
         - name: Start Node Exporter
           shell: nohup /usr/local/bin/node_exporter &
 
-    - name: Debug passed variables
-      debug:
-      msg:
-        - "Domain: {{ domain }}"
-        - "Porkbun Secret: {{ porkbun_secret }}"
-        - "Porkbun API Key: {{ porkbun_api_key }}"
-
     - name: Update DNS records via Porkbun API
       block:
         - name: Delete old A records
