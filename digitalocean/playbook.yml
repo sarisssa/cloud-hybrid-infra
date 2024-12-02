@@ -11,8 +11,6 @@
     prometheus_image: "prom/prometheus"
     demetrian_image: "sarisssa/demetrian:main"
   tasks:
-    - name: Wait for apt lock to be released or terminate hanging process
-
     - include_tasks: tasks/remove-apt-locks.yml
 
     - name: Install aptitude
