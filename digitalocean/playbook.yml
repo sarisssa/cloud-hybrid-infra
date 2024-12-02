@@ -147,6 +147,10 @@
           apt_repository:
             repo: deb https://download.docker.com/linux/ubuntu focal stable
             state: present
+            retries: 3
+            delay: 10
+            register: result
+            until: result is succeeded
 
         - name: Update apt and install docker-ce
           apt:
