@@ -13,7 +13,14 @@
   tasks:
     - include_tasks: tasks/remove-apt-locks.yml
 
+    - name: Check if Docker is installed
+      command: docker --version
+      register: docker_check
+      failed_when: false
+      changed_when: false
+
     - name: Install Docker
+      when: docker_check.rc != 0
       block:
         - name: Add Docker GPG apt Key
           apt_key:
@@ -25,13 +32,17 @@
             repo: deb https://download.docker.com/linux/ubuntu focal stable
             state: present
 
+        - name: Install Docker Package
+          apt:
+            name: docker-ce
+            state: present
+
     - name: Install required packages
       apt:
         name:
           - certbot
           - aptitude
           - nginx
-          - docker-ce
         pkg:
           - curl
           - vim
@@ -62,10 +73,10 @@
         regexp: "^#?PermitRootLogin"
         line: "PermitRootLogin prohibit-password"
 
-    # - name: Allow SSH connections
-    #   ufw:
-    #     rule: allow
-    #     name: OpenSSH
+    - name: Allow SSH connections
+      ufw:
+        rule: allow
+        name: OpenSSH
 
     - name: Allow HTTP traffic (port 80)
       ufw:
@@ -83,19 +94,33 @@
       ufw:
         state: enabled
 
-    # - name: Update PATH environment
-    #   lineinfile:
-    #     path: /etc/environment
-    #     regexp: "^PATH="
-    #     line: 'PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"'
-
     - name: Pull Prometheus Docker image
       docker_image:
         name: "{{ prometheus_image }}"
         source: pull
         state: present
 
+    - name: Run Prometheus Docker container
+      docker_container:
+        name: prometheus
+        image: "{{ prometheus_image }}"
+        state: started
+        ports:
+          - "9090:9090"
+        volumes:
+          - "/tmp/prometheus.yml:/etc/prometheus/prometheus.yml"
+        restart_policy: always
+        command: >
+          --config.file=/etc/prometheus/prometheus.yml
+          --web.external-url=/prometheus
+
+    - name: Check if Node Exporter is already installed
+      stat:
+        path: /usr/local/bin/node_exporter
+      register: node_exporter_exists
+
     - name: Install Node Exporter
+      when: not node_exporter_exists.stat.exists
       block:
         - name: Download Node Exporter
           get_url:
