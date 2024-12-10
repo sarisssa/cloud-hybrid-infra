@@ -1,3 +1,16 @@
+terraform {
+  backend "s3" {
+    bucket = "tf-state-demetrian"
+    key    = "demetrian.tfstate"
+    region = "us-west-1"
+    profile= "default"
+  }
+}
+
+module "aws" {
+  source = "./aws"
+}
+
 module "digitalocean" {
   source = "./digitalocean"
   pvt_key = var.pvt_key
